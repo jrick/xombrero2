@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/conformal/gotk3/glib"
 	"github.com/conformal/gotk3/gdk"
+	"github.com/conformal/gotk3/glib"
 	"github.com/conformal/gotk3/gtk"
 	"github.com/jrick/go-webkit2/wk2"
 )
@@ -60,7 +60,7 @@ func (SettingsPageDescription) NewPage() Page {
 // PageManager maintains all open pages and displays them in tabs.
 type PageManager struct {
 	*gtk.Notebook
-	htmls     map[uintptr]*HTMLPage
+	htmls     map[uintptr]*HTMLPage // key is widget's native pointer
 	downloads *DownloadsPage
 	settings  *SettingsPage
 	actions   *ActionMenu
@@ -133,7 +133,7 @@ func (p *PageManager) OpenPage(desc PageDescription) int {
 	}
 }
 
-const notebookIconSize = 1
+const notebookIconSize gtk.IconSize = 1
 
 // openNewPage adds the page content and title label to the notebook.  A close
 // tab button is added to the title label to create the notebook tab widget.
@@ -366,26 +366,57 @@ func (p *HTMLPage) setURI(uri string) {
 // entry to show and modify the currently-shown page in a WebView.
 type NavigationBar struct {
 	*gtk.Toolbar
-	uriEntry *gtk.Entry
+	backButton   *gtk.ToolButton
+	fwdButton    *gtk.ToolButton
+	stopButton   *gtk.ToolButton
+	reloadButton *gtk.ToolButton
+	uriEntry     *gtk.Entry
 }
+
+const navbarIconSize gtk.IconSize = 1
 
 // NewNavigationBar creates a new navigation bar for a HTML page.
 func NewNavigationBar() *NavigationBar {
 	tb, _ := gtk.ToolbarNew()
+
+	var back, forward, stop, reload *gtk.ToolButton
+	buttons := []struct {
+		iconName  string
+		tooltip   string
+		show      bool
+		sensitive bool
+		button    **gtk.ToolButton
+	}{
+		{"back", "Go back", true, false, &back},
+		{"forward", "Go forward", true, false, &forward},
+		{"stop", "Stop loading page", true, true, &stop},
+		{"reload", "Reload page", false, true, &reload},
+	}
+	for i := range buttons {
+		b := &buttons[i]
+		image, _ := gtk.ImageNewFromIconName(b.iconName, navbarIconSize)
+		button, _ := gtk.ToolButtonNew(image, b.iconName)
+		button.SetTooltipText(b.tooltip)
+		if b.show {
+			button.ShowAll()
+		}
+		button.SetSensitive(b.sensitive)
+		tb.Add(button)
+		*b.button = button
+	}
+
 	uriEntry, _ := gtk.EntryNew()
 	uriEntry.SetInputPurpose(gtk.INPUT_PURPOSE_URL)
 	uriEntry.SetIconFromIconName(gtk.ENTRY_ICON_PRIMARY, "broken")
-	uriEntry.SetIconFromIconName(gtk.ENTRY_ICON_SECONDARY, "broken")
+	uriEntry.SetIconFromIconName(gtk.ENTRY_ICON_SECONDARY, "non-starred")
 
 	tool, _ := gtk.ToolItemNew()
 	tool.Add(uriEntry)
 	tool.SetExpand(true)
-	uriEntry.Show()
-
+	tool.ShowAll()
 	tb.Add(tool)
-	tool.Show()
 
-	return &NavigationBar{tb, uriEntry}
+	return &NavigationBar{tb, back, forward, stop, reload, uriEntry}
 }
 
 type DownloadsPage struct {
