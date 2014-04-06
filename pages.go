@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/conformal/gotk3/glib"
+	"github.com/conformal/gotk3/gdk"
 	"github.com/conformal/gotk3/gtk"
 	"github.com/jrick/go-webkit2/wk2"
 )
@@ -256,22 +257,41 @@ func NewHTMLPage(uri string) *HTMLPage {
 }
 
 func (p *HTMLPage) connectNavbarSignals() {
-	p.navbar.uriEntry.Connect("activate", func(e *gtk.Entry) {
-		uri, _ := e.GetText()
+	// BUG: GTK does not set the correct actual GValue type for a GtkEntry
+	// when marshaling values for a GClosure connecting to the "activate"
+	// signal.  Attempting to use a *gtk.Entry as the first argument to this
+	// callback will result in panics when gotk3 attempts to create the
+	// callback arguments.
+	//
+	// See https://bugzilla.gnome.org/show_bug.cgi?id=727678 for more
+	// details.
+	p.navbar.uriEntry.Connect("activate", func() {
+		uri, _ := p.navbar.uriEntry.GetText()
 		p.LoadURI(uri)
 		p.wv.GrabFocus()
+	})
+
+	editing := false
+
+	p.navbar.uriEntry.Connect("button-release-event", func(e *gtk.Entry) {
+		if !editing {
+			// TODO: Show icon to clear all text instead. Selecting
+			// everything overwrites the X11 PRIMARY clipboard.
+			e.GrabFocus()
+			editing = true
+		}
 	})
 
 	p.navbar.uriEntry.Connect("notify::is-focus", func(e *gtk.Entry) {
 		if !e.IsFocus() {
 			e.SelectRegion(0, 0)
+			editing = false
 		}
 	})
 
-	p.navbar.uriEntry.Connect("button-release-event", func(e *gtk.Entry) {
-		e.SelectRegion(0, -1)
-		//e.GrabFocus()
-	})
+	iconPressFn := func(e *gtk.Entry, p gtk.EntryIconPosition, ev *gdk.Event) {
+	}
+	p.navbar.uriEntry.Connect("icon-press", iconPressFn)
 }
 
 func (p *HTMLPage) connectWebViewSignals() {
@@ -352,6 +372,8 @@ func NewNavigationBar() *NavigationBar {
 	tb, _ := gtk.ToolbarNew()
 	uriEntry, _ := gtk.EntryNew()
 	uriEntry.SetInputPurpose(gtk.INPUT_PURPOSE_URL)
+	uriEntry.SetIconFromIconName(gtk.ENTRY_ICON_PRIMARY, "broken")
+	uriEntry.SetIconFromIconName(gtk.ENTRY_ICON_SECONDARY, "broken")
 
 	tool, _ := gtk.ToolItemNew()
 	tool.Add(uriEntry)
