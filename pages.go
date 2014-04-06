@@ -128,11 +128,7 @@ func (p *PageManager) OpenPage(desc PageDescription) int {
 		return index
 
 	default:
-		// Unknown page. Logically should never happen, but if it
-		// ever does, handle it by showing it, but don't add it to
-		// the page manager's internal structures.
-		page := d.NewPage()
-		return p.openNewPage(page)
+		panic("unknown page description")
 	}
 }
 
@@ -261,7 +257,6 @@ func NewHTMLPage(uri string) *HTMLPage {
 
 func (p *HTMLPage) connectNavbarSignals() {
 	p.navbar.uriEntry.Connect("activate", func(e *gtk.Entry) {
-		fmt.Println("ok...")
 		uri, _ := e.GetText()
 		p.LoadURI(uri)
 		p.wv.GrabFocus()
