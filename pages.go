@@ -276,7 +276,9 @@ func (p *HTMLPage) connectNavbarSignals() {
 	p.navbar.uriEntry.Connect("button-release-event", func(e *gtk.Entry) {
 		if !editing {
 			// TODO: Show icon to clear all text instead. Selecting
-			// everything overwrites the X11 PRIMARY clipboard.
+			// everything overwrites the X11 PRIMARY clipboard. If
+			// this ever gets a windows port, selecting everything
+			// should be the default.
 			e.GrabFocus()
 			editing = true
 		}
