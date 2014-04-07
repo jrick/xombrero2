@@ -36,7 +36,7 @@ type HTMLPageDescription struct {
 // NewPage creates a new HTML page from the description.  The returned page
 // will be a *HTMLPage.
 func (d *HTMLPageDescription) NewPage() Page {
-	return NewHTMLPage(d.uri)
+	return newHTMLPage(d.uri)
 }
 
 // DownloadsPageDescription describes a downloads page.
@@ -45,7 +45,7 @@ type DownloadsPageDescription struct{}
 // NewPage creates a new downloads page from the description.  The returned
 // page will be a *DownloadsPage.
 func (DownloadsPageDescription) NewPage() Page {
-	return NewDownloadsPage()
+	return newDownloadsPage()
 }
 
 // SettingsPageDescription describes a settings page.
@@ -54,7 +54,7 @@ type SettingsPageDescription struct{}
 // NewPage creates a new settings page from the description.  The returned
 // page will be a *DownloadsPage.
 func (SettingsPageDescription) NewPage() Page {
-	return NewSettingsPage()
+	return newSettingsPage()
 }
 
 // PageManager maintains all open pages and displays them in tabs.
@@ -69,6 +69,7 @@ type PageManager struct {
 // NewPageManager creates and initializes a page manager.
 func NewPageManager(session []PageDescription) *PageManager {
 	nb, _ := gtk.NotebookNew()
+	nb.SetCanFocus(false)
 	nb.SetShowBorder(false)
 	p := &PageManager{
 		Notebook: nb,
@@ -76,8 +77,7 @@ func NewPageManager(session []PageDescription) *PageManager {
 	}
 
 	if session == nil {
-		blank := &HTMLPageDescription{"about:blank"}
-		session = []PageDescription{blank}
+		session = []PageDescription{BlankPage}
 	}
 	for _, page := range session {
 		p.OpenPage(page)
@@ -85,8 +85,7 @@ func NewPageManager(session []PageDescription) *PageManager {
 
 	actions := NewActionMenu()
 	actions.newTab.Connect("activate", func() {
-		blank := &HTMLPageDescription{"about:blank"}
-		n := p.OpenPage(blank)
+		n := p.OpenPage(BlankPage)
 		p.FocusPageN(n)
 	})
 	actions.quit.Connect("activate", func() {
@@ -108,8 +107,7 @@ func (p *PageManager) OpenPage(desc PageDescription) int {
 	case *HTMLPageDescription:
 		page := d.NewPage().(*HTMLPage)
 		p.htmls[page.Native()] = page
-		index := p.openNewPage(page)
-		return index
+		return p.openNewPage(page)
 
 	case DownloadsPageDescription:
 		if p.downloads == nil {
@@ -145,8 +143,12 @@ func (p *PageManager) openNewPage(page Page) int {
 	image, _ := gtk.ImageNewFromIconName("window-close", notebookIconSize)
 	closeButton, _ := gtk.ButtonNew()
 	closeButton.SetImage(image)
+	closeButton.SetCanFocus(false)
 	tabContent.Add(closeButton)
-	tabContent.Add(page.TitleLabel())
+	title := page.TitleLabel()
+	title.SetCanFocus(false)
+	tabContent.Add(title)
+	tabContent.SetCanFocus(false)
 
 	closeButton.Connect("clicked", func() {
 		pageNum := p.PageNum(page)
@@ -163,13 +165,14 @@ func (p *PageManager) openNewPage(page Page) int {
 		// Always show at least one page.  This defaults to a blank
 		// HTML page.
 		if p.GetNPages() == 0 {
-			p.OpenPage(&HTMLPageDescription{"about:blank"})
+			p.OpenPage(BlankPage)
 		}
 	})
 
 	tabContent.ShowAll()
 	page.Show()
 	n := p.AppendPage(page, tabContent)
+	p.GrabFocus()
 	p.SetTabReorderable(page, true)
 	return n
 }
@@ -206,9 +209,14 @@ type HTMLPage struct {
 	crash      *gtk.Label
 }
 
-// NewHTMLPage creates a new HTML page and begins loading the URI specified
+const aboutBlank = "about:blank"
+
+// BlankPage is the description for an empty HTML page.
+var BlankPage = &HTMLPageDescription{aboutBlank}
+
+// newHTMLPage creates a new HTML page and begins loading the URI specified
 // by uri.  The URI `about:blank` may be used to load a blank page.
-func NewHTMLPage(uri string) *HTMLPage {
+func newHTMLPage(uri string) *HTMLPage {
 	grid, _ := gtk.GridNew()
 	grid.SetOrientation(gtk.ORIENTATION_VERTICAL)
 	navbar := NewNavigationBar()
@@ -243,7 +251,7 @@ func NewHTMLPage(uri string) *HTMLPage {
 
 	// XXX: Hacks! work around for webkit race
 	go func() {
-		time.Sleep(2 * time.Second)
+		time.Sleep(time.Second)
 		glib.IdleAdd(func() {
 			stack.SetVisibleChild(grid)
 			wv.Show()
@@ -309,14 +317,26 @@ func (p *HTMLPage) connectWebViewSignals() {
 		}
 	})
 
+	p.wv.Connect("load-failed", func(wv *wk2.WebView, e wk2.LoadEvent) {
+		p.navbar.uriEntry.SetProgressFraction(0)
+		switch e {
+		case wk2.LoadStarted:
+		case wk2.LoadRedirected:
+		case wk2.LoadCommitted:
+		case wk2.LoadFinished:
+		}
+	})
+
 	p.wv.Connect("web-process-crashed", func() {
 		p.crash.Show()
 		p.SetVisibleChild(p.crash)
 	})
 
 	p.wv.Connect("notify::estimated-load-progress", func() {
-		progress := p.wv.EstimatedLoadProgress()
-		p.navbar.uriEntry.SetProgressFraction(progress)
+		if p.uri != aboutBlank {
+			progress := p.wv.EstimatedLoadProgress()
+			p.navbar.uriEntry.SetProgressFraction(progress)
+		}
 	})
 
 	p.wv.Connect("notify::uri", func() {
@@ -370,12 +390,12 @@ func (p *HTMLPage) setURI(uri string) {
 	// in the URI entry, so set the text accordingly.
 	var chain []gtk.IWidget
 	text := ""
-	switch nb := p.navbar; uri {
-	case "about:blank":
-		chain = []gtk.IWidget{nb.uriEntry, nb.searchEntry, p.wv}
-		nb.uriEntry.SetProgressFraction(0)
+	switch nav := p.navbar; uri {
+	case aboutBlank:
+		chain = []gtk.IWidget{nav.uriEntry, nav.searchEntry, p.wv}
+		nav.uriEntry.SetProgressFraction(0)
 	default:
-		chain = []gtk.IWidget{p.wv, nb.uriEntry, nb.searchEntry}
+		chain = []gtk.IWidget{p.wv, nav.uriEntry, nav.searchEntry}
 		text = uri
 	}
 
@@ -463,7 +483,7 @@ type DownloadsPage struct {
 	*gtk.Widget // TODO
 }
 
-func NewDownloadsPage() *DownloadsPage {
+func newDownloadsPage() *DownloadsPage {
 	return nil // TODO
 }
 
@@ -483,7 +503,7 @@ type SettingsPage struct {
 	*gtk.Widget // TODO
 }
 
-func NewSettingsPage() *SettingsPage {
+func newSettingsPage() *SettingsPage {
 	return nil // TODO
 }
 
