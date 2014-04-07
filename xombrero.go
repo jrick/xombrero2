@@ -30,7 +30,6 @@ func RunGUI() {
 
 func main() {
 	runtime.GOMAXPROCS(runtime.NumCPU())
-	runtime.LockOSThread()
 	RunProfiler("localhost:7070")
 	RunGUI()
 }
