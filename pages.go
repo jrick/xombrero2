@@ -108,7 +108,8 @@ func (p *PageManager) OpenPage(desc PageDescription) int {
 	case *HTMLPageDescription:
 		page := d.NewPage().(*HTMLPage)
 		p.htmls[page.Native()] = page
-		return p.openNewPage(page)
+		index := p.openNewPage(page)
+		return index
 
 	case DownloadsPageDescription:
 		if p.downloads == nil {
@@ -159,6 +160,8 @@ func (p *PageManager) openNewPage(page Page) int {
 			p.settings = nil
 		}
 
+		// Always show at least one page.  This defaults to a blank
+		// HTML page.
 		if p.GetNPages() == 0 {
 			p.OpenPage(&HTMLPageDescription{"about:blank"})
 		}
@@ -225,13 +228,6 @@ func NewHTMLPage(uri string) *HTMLPage {
 	grid.Add(wv)
 	grid.Show()
 
-	// The focus chain is explicitly set to remove the navbar from the
-	// tabbing order.  This is a workaround for a quirk with the page
-	// manager's notebook always moving focus to the first focus chain
-	// element when switching notebook pages, even if the desired widget
-	// is explicitly focused from the "switch-page" signal.
-	grid.SetFocusChain([]gtk.IWidget{wv})
-
 	stack, _ := gtk.StackNew()
 	stack.SetCanFocus(false)
 	stack.AddNamed(grid, "webview")
@@ -243,9 +239,11 @@ func NewHTMLPage(uri string) *HTMLPage {
 	page.connectNavbarSignals()
 	page.connectWebViewSignals()
 
+	page.setURI(uri)
+
 	// XXX: Hacks! work around for webkit race
 	go func() {
-		time.Sleep(time.Second)
+		time.Sleep(2 * time.Second)
 		glib.IdleAdd(func() {
 			stack.SetVisibleChild(grid)
 			wv.Show()
@@ -274,14 +272,18 @@ func (p *HTMLPage) connectNavbarSignals() {
 	editing := false
 
 	p.navbar.uriEntry.Connect("button-release-event", func(e *gtk.Entry) {
-		if !editing {
+		_, _, hasSelection := e.GetSelectionBounds()
+		if !editing && !hasSelection {
 			// TODO: Show icon to clear all text instead. Selecting
 			// everything overwrites the X11 PRIMARY clipboard. If
 			// this ever gets a windows port, selecting everything
 			// should be the default.
 			e.GrabFocus()
-			editing = true
 		}
+		// TODO: Only set editing = true when the pointer was released
+		// over the entry.  This signal still fires even if the mouse
+		// was moved away from the widget before releasing.
+		editing = true
 	})
 
 	p.navbar.uriEntry.Connect("notify::is-focus", func(e *gtk.Entry) {
@@ -318,7 +320,9 @@ func (p *HTMLPage) connectWebViewSignals() {
 	})
 
 	p.wv.Connect("notify::uri", func() {
-		p.setURI(p.wv.URI())
+		if !p.navbar.uriEntry.IsFocus() {
+			p.setURI(p.wv.URI())
+		}
 	})
 
 	p.wv.Connect("notify::title", func() {
@@ -353,13 +357,33 @@ func (p *HTMLPage) setTitle(title string) {
 	p.titleLabel.SetLabel(title)
 }
 
-// setURI sets the internal URI of the html page and modifies the URI entry
-// in the navigation bar if the entry is not currently being modified.
+// setURI sets the internal URI of the html page, modifies the URI entry in
+// the navigation bar if the entry is not currently being modified, and sets
+// a new focus chain depending on the URI.
 func (p *HTMLPage) setURI(uri string) {
 	p.uri = uri
-	if e := p.navbar.uriEntry; !e.HasFocus() {
-		e.SetText(uri)
+
+	// Choose the correct focus chain (tabbing order) depending on the new
+	// URI.  This is required as switching notebook pages will always focus
+	// the first grab widget in the focus chain, even if this is not the
+	// desired behavior.  about:blank pages should also not include anything
+	// in the URI entry, so set the text accordingly.
+	var chain []gtk.IWidget
+	text := ""
+	switch nb := p.navbar; uri {
+	case "about:blank":
+		chain = []gtk.IWidget{nb.uriEntry, nb.searchEntry, p.wv}
+		nb.uriEntry.SetProgressFraction(0)
+	default:
+		chain = []gtk.IWidget{p.wv, nb.uriEntry, nb.searchEntry}
+		text = uri
 	}
+
+	if e := p.navbar.uriEntry; !e.HasFocus() {
+		e.SetText(text)
+	}
+
+	p.Stack.SetFocusChain(chain)
 }
 
 // NavigationBar is a toolbar for HTML page navigation.  It contains a URI
@@ -371,6 +395,7 @@ type NavigationBar struct {
 	stopButton   *gtk.ToolButton
 	reloadButton *gtk.ToolButton
 	uriEntry     *gtk.Entry
+	searchEntry  *gtk.SearchEntry
 }
 
 const navbarIconSize gtk.IconSize = 1
@@ -405,18 +430,33 @@ func NewNavigationBar() *NavigationBar {
 		*b.button = button
 	}
 
-	uriEntry, _ := gtk.EntryNew()
-	uriEntry.SetInputPurpose(gtk.INPUT_PURPOSE_URL)
-	uriEntry.SetIconFromIconName(gtk.ENTRY_ICON_PRIMARY, "broken")
-	uriEntry.SetIconFromIconName(gtk.ENTRY_ICON_SECONDARY, "non-starred")
+	sep, _ := gtk.SeparatorToolItemNew()
+	sep.SetDraw(false)
+	tb.Add(sep)
+	sep.Show()
 
+	uri, _ := gtk.EntryNew()
+	uri.SetInputPurpose(gtk.INPUT_PURPOSE_URL)
+	uri.SetIconFromIconName(gtk.ENTRY_ICON_PRIMARY, "broken")
+	uri.SetIconFromIconName(gtk.ENTRY_ICON_SECONDARY, "non-starred")
 	tool, _ := gtk.ToolItemNew()
-	tool.Add(uriEntry)
+	tool.Add(uri)
 	tool.SetExpand(true)
 	tool.ShowAll()
 	tb.Add(tool)
 
-	return &NavigationBar{tb, back, forward, stop, reload, uriEntry}
+	sep, _ = gtk.SeparatorToolItemNew()
+	sep.SetDraw(false)
+	tb.Add(sep)
+	sep.Show()
+
+	search, _ := gtk.SearchEntryNew()
+	tool, _ = gtk.ToolItemNew()
+	tool.Add(search)
+	tool.ShowAll()
+	tb.Add(tool)
+
+	return &NavigationBar{tb, back, forward, stop, reload, uri, search}
 }
 
 type DownloadsPage struct {
@@ -492,7 +532,7 @@ func NewActionMenu() *ActionMenu {
 	menu.Append(downloads)
 	downloads.Show()
 
-	favorites, _ := gtk.MenuItemNewWithLabel("Favorites (TODO)")
+	favorites, _ := gtk.MenuItemNewWithLabel("Manage favorites (TODO)")
 	menu.Append(favorites)
 	favorites.Show()
 
