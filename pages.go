@@ -36,7 +36,7 @@ type HTMLPageDescription struct {
 // NewPage creates a new HTML page from the description.  The returned page
 // will be a *HTMLPage.
 func (d *HTMLPageDescription) NewPage() Page {
-	return newHTMLPage(d.uri)
+	return d.newHTMLPage()
 }
 
 // DownloadsPageDescription describes a downloads page.
@@ -44,8 +44,8 @@ type DownloadsPageDescription struct{}
 
 // NewPage creates a new downloads page from the description.  The returned
 // page will be a *DownloadsPage.
-func (DownloadsPageDescription) NewPage() Page {
-	return newDownloadsPage()
+func (d DownloadsPageDescription) NewPage() Page {
+	return d.newDownloadsPage()
 }
 
 // SettingsPageDescription describes a settings page.
@@ -53,8 +53,8 @@ type SettingsPageDescription struct{}
 
 // NewPage creates a new settings page from the description.  The returned
 // page will be a *DownloadsPage.
-func (SettingsPageDescription) NewPage() Page {
-	return newSettingsPage()
+func (s SettingsPageDescription) NewPage() Page {
+	return s.newSettingsPage()
 }
 
 // PageManager maintains all open pages and displays them in tabs.
@@ -216,7 +216,7 @@ var BlankPage = &HTMLPageDescription{aboutBlank}
 
 // newHTMLPage creates a new HTML page and begins loading the URI specified
 // by uri.  The URI `about:blank` may be used to load a blank page.
-func newHTMLPage(uri string) *HTMLPage {
+func (d HTMLPageDescription) newHTMLPage() *HTMLPage {
 	grid, _ := gtk.GridNew()
 	grid.SetOrientation(gtk.ORIENTATION_VERTICAL)
 	navbar := NewNavigationBar()
@@ -242,12 +242,12 @@ func newHTMLPage(uri string) *HTMLPage {
 	stack.AddNamed(crash, "crash")
 	stack.SetVisibleChild(crash)
 
-	page := &HTMLPage{stack, "New Tab", uri, title, navbar, wv, crash}
+	page := &HTMLPage{stack, "New Tab", d.uri, title, navbar, wv, crash}
 
 	page.connectNavbarSignals()
 	page.connectWebViewSignals()
 
-	page.setURI(uri)
+	page.setURI(d.uri)
 
 	// XXX: Hacks! work around for webkit race
 	go func() {
@@ -255,7 +255,7 @@ func newHTMLPage(uri string) *HTMLPage {
 		glib.IdleAdd(func() {
 			stack.SetVisibleChild(grid)
 			wv.Show()
-			page.LoadURI(uri)
+			page.LoadURI(d.uri)
 		})
 	}()
 
@@ -483,7 +483,7 @@ type DownloadsPage struct {
 	*gtk.Widget // TODO
 }
 
-func newDownloadsPage() *DownloadsPage {
+func (DownloadsPageDescription) newDownloadsPage() *DownloadsPage {
 	return nil // TODO
 }
 
@@ -503,7 +503,7 @@ type SettingsPage struct {
 	*gtk.Widget // TODO
 }
 
-func newSettingsPage() *SettingsPage {
+func (s SettingsPageDescription) newSettingsPage() *SettingsPage {
 	return nil // TODO
 }
 
