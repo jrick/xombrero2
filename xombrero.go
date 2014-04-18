@@ -9,6 +9,8 @@ import (
 	"runtime"
 )
 
+const HomePage HTMLPageDescription = "https://www.duckduckgo.com/lite"
+
 // RunGUI initializes GTK, creates the toplevel window and all child widgets,
 // opens the pages for the default session, and runs the Glib main event loop.
 // This function blocks until the toplevel window is destroyed and the event
@@ -22,8 +24,7 @@ func RunGUI() {
 	})
 	window.Show()
 
-	home := &HTMLPageDescription{"https://www.duckduckgo.com/lite"}
-	session := []PageDescription{home}
+	session := []PageDescription{HomePage}
 
 	pm := NewPageManager(session)
 	window.Add(pm)

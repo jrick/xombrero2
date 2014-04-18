@@ -31,15 +31,13 @@ type PageDescription interface {
 	NewPage() Page
 }
 
-// HTMLPageDescription holds the parameters required for the page mangager
-// to open and manage a new HTML page
-type HTMLPageDescription struct {
-	uri string
-}
+// HTMLPageDescription is the uri of a new HTML page for page manager to open
+// and manage.
+type HTMLPageDescription string
 
 // NewPage creates a new HTML page from the description.  The returned page
 // will be a *HTMLPage.
-func (d *HTMLPageDescription) NewPage() Page {
+func (d HTMLPageDescription) NewPage() Page {
 	return d.newHTMLPage()
 }
 
@@ -108,7 +106,7 @@ func NewPageManager(session []PageDescription) *PageManager {
 // the shown page is returned.
 func (p *PageManager) OpenPage(desc PageDescription) int {
 	switch d := desc.(type) {
-	case *HTMLPageDescription:
+	case HTMLPageDescription:
 		page := d.NewPage().(*HTMLPage)
 		p.htmls[page.Native()] = page
 		return p.openNewPage(page)
@@ -213,10 +211,8 @@ type HTMLPage struct {
 	crash      *gtk.Label
 }
 
-const aboutBlank = "about:blank"
-
 // BlankPage is the description for an empty HTML page.
-var BlankPage = &HTMLPageDescription{aboutBlank}
+const BlankPage HTMLPageDescription = "about:blank"
 
 // newHTMLPage creates a new HTML page and begins loading the URI specified
 // by uri.  The URI `about:blank` may be used to load a blank page.
@@ -246,12 +242,12 @@ func (d HTMLPageDescription) newHTMLPage() *HTMLPage {
 	stack.AddNamed(crash, "crash")
 	stack.SetVisibleChild(crash)
 
-	page := &HTMLPage{stack, "New Tab", d.uri, title, navbar, wv, crash}
+	page := &HTMLPage{stack, "New Tab", string(d), title, navbar, wv, crash}
 
 	page.connectNavbarSignals()
 	page.connectWebViewSignals()
 
-	page.setURI(d.uri)
+	page.setURI(string(d))
 
 	// XXX: Hacks! work around for webkit race
 	go func() {
@@ -259,7 +255,7 @@ func (d HTMLPageDescription) newHTMLPage() *HTMLPage {
 		glib.IdleAdd(func() {
 			stack.SetVisibleChild(grid)
 			wv.Show()
-			page.LoadURI(d.uri)
+			page.LoadURI(string(d))
 		})
 	}()
 
@@ -337,7 +333,7 @@ func (p *HTMLPage) connectWebViewSignals() {
 	})
 
 	p.wv.Connect("notify::estimated-load-progress", func() {
-		if p.uri != aboutBlank {
+		if HTMLPageDescription(p.uri) != BlankPage {
 			progress := p.wv.EstimatedLoadProgress()
 			p.navbar.uriEntry.SetProgressFraction(progress)
 		}
@@ -394,8 +390,8 @@ func (p *HTMLPage) setURI(uri string) {
 	// in the URI entry, so set the text accordingly.
 	var chain []gtk.IWidget
 	text := ""
-	switch nav := p.navbar; uri {
-	case aboutBlank:
+	switch nav := p.navbar; HTMLPageDescription(uri) {
+	case BlankPage:
 		chain = []gtk.IWidget{nav.uriEntry, nav.searchEntry, p.wv}
 		nav.uriEntry.SetProgressFraction(0)
 	default:
