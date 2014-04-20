@@ -11,6 +11,7 @@ import (
 	"github.com/conformal/gotk3/gdk"
 	"github.com/conformal/gotk3/glib"
 	"github.com/conformal/gotk3/gtk"
+	"github.com/conformal/gotk3/pango"
 	"github.com/jrick/go-webkit2/wk2"
 )
 
@@ -149,6 +150,7 @@ func (p *PageManager) openNewPage(page Page) int {
 	tabContent.Add(closeButton)
 	title := page.TitleLabel()
 	title.SetCanFocus(false)
+	title.SetSizeRequest(150, -1)
 	tabContent.Add(title)
 	tabContent.SetCanFocus(false)
 
@@ -225,6 +227,7 @@ func (d HTMLPageDescription) newHTMLPage() *HTMLPage {
 	wv.SetHExpand(true)
 	wv.SetVExpand(true)
 	title, _ := gtk.LabelNew("New Tab")
+	title.SetEllipsize(pango.ELLIPSIZE_END)
 	crash, _ := gtk.LabelNew("WebKit crashed :'(")
 
 	grid.SetCanFocus(false)
