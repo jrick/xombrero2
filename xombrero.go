@@ -5,8 +5,10 @@
 package main
 
 import (
-	"github.com/conformal/gotk3/gtk"
 	"runtime"
+
+	"github.com/conformal/gotk3/gtk"
+	"github.com/jrick/go-webkit2/wk2"
 )
 
 const HomePage HTMLPageDescription = "https://www.duckduckgo.com/lite"
@@ -30,8 +32,10 @@ func RunGUI() {
 	window.SetDefaultGeometry(defaultWinWidth, defaultWinHeight)
 	window.Show()
 
-	session := []PageDescription{HomePage}
+	wc := wk2.DefaultWebContext()
+	wc.SetProcessModel(wk2.ProcessModelMultipleSecondaryProcesses)
 
+	session := []PageDescription{HomePage}
 	pm := NewPageManager(session)
 	window.Add(pm)
 	pm.Show()
