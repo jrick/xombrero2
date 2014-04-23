@@ -6,10 +6,8 @@ package main
 
 import (
 	"fmt"
-	"time"
 
 	"github.com/conformal/gotk3/gdk"
-	"github.com/conformal/gotk3/glib"
 	"github.com/conformal/gotk3/gtk"
 	"github.com/conformal/gotk3/pango"
 	"github.com/jrick/go-webkit2/wk2"
@@ -252,15 +250,9 @@ func (d HTMLPageDescription) newHTMLPage() *HTMLPage {
 
 	page.setURI(string(d))
 
-	// XXX: Hacks! work around for webkit race
-	go func() {
-		time.Sleep(time.Second)
-		glib.IdleAdd(func() {
-			stack.SetVisibleChild(grid)
-			wv.Show()
-			page.LoadURI(string(d))
-		})
-	}()
+	stack.SetVisibleChild(grid)
+	wv.Show()
+	page.LoadURI(string(d))
 
 	return page
 }
