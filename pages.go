@@ -225,8 +225,8 @@ type HTMLPage struct {
 // BlankPage is the description for an empty HTML page.
 const BlankPage HTMLPageDescription = "about:blank"
 
-// newHTMLPage creates a new HTML page and begins loading the URI specified
-// by uri.  The URI `about:blank` may be used to load a blank page.
+// newHTMLPage creates a new HTML page and begins loading the URI in the
+// description.
 func (d HTMLPageDescription) newHTMLPage() *HTMLPage {
 	grid, _ := gtk.GridNew()
 	grid.SetOrientation(gtk.ORIENTATION_VERTICAL)
