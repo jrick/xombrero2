@@ -8,6 +8,7 @@ import (
 	"fmt"
 
 	"github.com/conformal/gotk3/gdk"
+	"github.com/conformal/gotk3/glib"
 	"github.com/conformal/gotk3/gtk"
 	"github.com/conformal/gotk3/pango"
 	"github.com/jrick/go-webkit2/wk2"
@@ -158,6 +159,15 @@ func (p *PageManager) openNewPage(page Page) int {
 		switch page := page.(type) {
 		case *HTMLPage:
 			delete(p.htmls, page.Native())
+
+			for _, s := range page.signals {
+				s.Object.HandlerDisconnect(s.SignalHandle)
+			}
+
+			// Do not wait for the garbage collector to finalize
+			// the webview and reap the web process.
+			page.wv.Destroy()
+
 		case *DownloadsPage:
 			p.downloads = nil
 		case *SettingsPage:
@@ -209,6 +219,7 @@ type HTMLPage struct {
 	navbar     *NavigationBar
 	wv         *wk2.WebView
 	crash      *gtk.Label
+	signals    []objectSignal
 }
 
 // BlankPage is the description for an empty HTML page.
@@ -243,10 +254,17 @@ func (d HTMLPageDescription) newHTMLPage() *HTMLPage {
 	stack.AddNamed(crash, "crash")
 	stack.SetVisibleChild(crash)
 
-	page := &HTMLPage{stack, "New Tab", string(d), title, navbar, wv, crash}
+	page := &HTMLPage{Stack: stack,
+		title:      "New Tab",
+		uri:        string(d),
+		titleLabel: title,
+		navbar:     navbar,
+		wv:         wv,
+		crash:      crash,
+	}
 
-	page.connectNavbarSignals()
-	page.connectWebViewSignals()
+	page.signals = append(page.signals, page.connectNavbarSignals()...)
+	page.signals = append(page.signals, page.connectWebViewSignals()...)
 
 	page.setURI(string(d))
 
@@ -257,7 +275,12 @@ func (d HTMLPageDescription) newHTMLPage() *HTMLPage {
 	return page
 }
 
-func (p *HTMLPage) connectNavbarSignals() {
+type objectSignal struct {
+	*glib.Object
+	glib.SignalHandle
+}
+
+func (p *HTMLPage) connectNavbarSignals() (signals []objectSignal) {
 	// BUG: GTK does not set the correct actual GValue type for a GtkEntry
 	// when marshaling values for a GClosure connecting to the "activate"
 	// signal.  Attempting to use a *gtk.Entry as the first argument to this
@@ -266,15 +289,16 @@ func (p *HTMLPage) connectNavbarSignals() {
 	//
 	// See https://bugzilla.gnome.org/show_bug.cgi?id=727678 for more
 	// details.
-	p.navbar.uriEntry.Connect("activate", func() {
+	h, _ := p.navbar.uriEntry.Connect("activate", func() {
 		uri, _ := p.navbar.uriEntry.GetText()
 		p.LoadURI(uri)
 		p.wv.GrabFocus()
 	})
+	signals = append(signals, objectSignal{p.navbar.uriEntry.Object, h})
 
 	editing := false
 
-	p.navbar.uriEntry.Connect("button-release-event", func(e *gtk.Entry) {
+	h, _ = p.navbar.uriEntry.Connect("button-release-event", func(e *gtk.Entry) {
 		_, _, hasSelection := e.GetSelectionBounds()
 		if !editing && !hasSelection {
 			// TODO: Show icon to clear all text instead. Selecting
@@ -288,21 +312,24 @@ func (p *HTMLPage) connectNavbarSignals() {
 		// was moved away from the widget before releasing.
 		editing = true
 	})
+	signals = append(signals, objectSignal{p.navbar.uriEntry.Object, h})
 
-	p.navbar.uriEntry.Connect("notify::is-focus", func(e *gtk.Entry) {
+	h, _ = p.navbar.uriEntry.Connect("notify::is-focus", func(e *gtk.Entry) {
 		if !e.IsFocus() {
 			e.SelectRegion(0, 0)
 			editing = false
 		}
 	})
+	signals = append(signals, objectSignal{p.navbar.uriEntry.Object, h})
 
 	iconPressFn := func(e *gtk.Entry, p gtk.EntryIconPosition, ev *gdk.Event) {
 	}
-	p.navbar.uriEntry.Connect("icon-press", iconPressFn)
+	h, _ = p.navbar.uriEntry.Connect("icon-press", iconPressFn)
+	return append(signals, objectSignal{p.navbar.uriEntry.Object, h})
 }
 
-func (p *HTMLPage) connectWebViewSignals() {
-	p.wv.Connect("load-changed", func(wv *wk2.WebView, e wk2.LoadEvent) {
+func (p *HTMLPage) connectWebViewSignals() (signals []objectSignal) {
+	h, _ := p.wv.Connect("load-changed", func(wv *wk2.WebView, e wk2.LoadEvent) {
 		switch e {
 		case wk2.LoadStarted:
 		case wk2.LoadRedirected:
@@ -311,8 +338,9 @@ func (p *HTMLPage) connectWebViewSignals() {
 			p.navbar.uriEntry.SetProgressFraction(0)
 		}
 	})
+	signals = append(signals, objectSignal{p.wv.Object, h})
 
-	p.wv.Connect("load-failed", func(wv *wk2.WebView, e wk2.LoadEvent) {
+	h, _ = p.wv.Connect("load-failed", func(wv *wk2.WebView, e wk2.LoadEvent) {
 		p.navbar.uriEntry.SetProgressFraction(0)
 		switch e {
 		case wk2.LoadStarted:
@@ -321,28 +349,33 @@ func (p *HTMLPage) connectWebViewSignals() {
 		case wk2.LoadFinished:
 		}
 	})
+	signals = append(signals, objectSignal{p.wv.Object, h})
 
-	p.wv.Connect("web-process-crashed", func() {
+	h, _ = p.wv.Connect("web-process-crashed", func() {
 		p.crash.Show()
 		p.SetVisibleChild(p.crash)
 	})
+	signals = append(signals, objectSignal{p.wv.Object, h})
 
-	p.wv.Connect("notify::estimated-load-progress", func() {
+	h, _ = p.wv.Connect("notify::estimated-load-progress", func() {
 		if HTMLPageDescription(p.uri) != BlankPage {
 			progress := p.wv.EstimatedLoadProgress()
 			p.navbar.uriEntry.SetProgressFraction(progress)
 		}
 	})
+	signals = append(signals, objectSignal{p.wv.Object, h})
 
-	p.wv.Connect("notify::uri", func() {
+	h, _ = p.wv.Connect("notify::uri", func() {
 		if !p.navbar.uriEntry.IsFocus() {
 			p.setURI(p.wv.URI())
 		}
 	})
+	signals = append(signals, objectSignal{p.wv.Object, h})
 
-	p.wv.Connect("notify::title", func() {
+	h, _ = p.wv.Connect("notify::title", func() {
 		p.setTitle(p.wv.Title())
 	})
+	return append(signals, objectSignal{p.wv.Object, h})
 }
 
 // LoadURI begins loading the page's WebView with the URI described by uri.
