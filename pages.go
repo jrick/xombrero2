@@ -254,7 +254,8 @@ func (d HTMLPageDescription) newHTMLPage() *HTMLPage {
 	stack.AddNamed(crash, "crash")
 	stack.SetVisibleChild(crash)
 
-	page := &HTMLPage{Stack: stack,
+	page := &HTMLPage{
+		Stack:      stack,
 		title:      "New Tab",
 		uri:        string(d),
 		titleLabel: title,
