@@ -292,6 +292,16 @@ func (p *HTMLPage) connectNavbarSignals() (signals []objectSignal) {
 	})
 	signals = append(signals, objectSignal{p.navbar.fwdButton.Object, h})
 
+	h, _ = p.navbar.reloadButton.Connect("clicked", func() {
+		p.wv.Reload()
+	})
+	signals = append(signals, objectSignal{p.navbar.reloadButton.Object, h})
+
+	h, _ = p.navbar.stopButton.Connect("clicked", func() {
+		p.wv.StopLoading()
+	})
+	signals = append(signals, objectSignal{p.navbar.stopButton.Object, h})
+
 	// BUG: GTK does not set the correct actual GValue type for a GtkEntry
 	// when marshaling values for a GClosure connecting to the "activate"
 	// signal.  Attempting to use a *gtk.Entry as the first argument to this
@@ -350,9 +360,13 @@ func (p *HTMLPage) connectWebKitSignals() (signals []objectSignal) {
 	h, _ = p.wv.Connect("load-changed", func(wv *wk2.WebView, e wk2.LoadEvent) {
 		switch e {
 		case wk2.LoadStarted:
+			p.navbar.reloadButton.Hide()
+			p.navbar.stopButton.Show()
 		case wk2.LoadRedirected:
 		case wk2.LoadCommitted:
 		case wk2.LoadFinished:
+			p.navbar.reloadButton.Show()
+			p.navbar.stopButton.Hide()
 			p.navbar.uriEntry.SetProgressFraction(0)
 		}
 	})
@@ -478,18 +492,19 @@ func NewNavigationBar() *NavigationBar {
 		sensitive bool
 		button    **gtk.ToolButton
 	}{
-		{"back", "Go back", true, false, &back},
-		{"forward", "Go forward", true, false, &forward},
-		{"stop", "Stop loading page", true, true, &stop},
-		{"reload", "Reload page", false, true, &reload},
+		{"go-previous", "Go back", true, false, &back},
+		{"go-next", "Go forward", true, false, &forward},
+		{"process-stop", "Stop loading page", true, true, &stop},
+		{"view-refresh", "Reload page", false, true, &reload},
 	}
 	for i := range buttons {
 		b := &buttons[i]
 		image, _ := gtk.ImageNewFromIconName(b.iconName, navbarIconSize)
+		image.Show()
 		button, _ := gtk.ToolButtonNew(image, b.iconName)
 		button.SetTooltipText(b.tooltip)
 		if b.show {
-			button.ShowAll()
+			button.Show()
 		}
 		button.SetSensitive(b.sensitive)
 		tb.Add(button)
