@@ -265,7 +265,7 @@ func (d HTMLPageDescription) newHTMLPage() *HTMLPage {
 	}
 
 	page.signals = append(page.signals, page.connectNavbarSignals()...)
-	page.signals = append(page.signals, page.connectWebViewSignals()...)
+	page.signals = append(page.signals, page.connectWebKitSignals()...)
 
 	page.setURI(string(d))
 
@@ -282,6 +282,16 @@ type objectSignal struct {
 }
 
 func (p *HTMLPage) connectNavbarSignals() (signals []objectSignal) {
+	h, _ := p.navbar.backButton.Connect("clicked", func() {
+		p.wv.GoBack()
+	})
+	signals = append(signals, objectSignal{p.navbar.backButton.Object, h})
+
+	h, _ = p.navbar.fwdButton.Connect("clicked", func() {
+		p.wv.GoForward()
+	})
+	signals = append(signals, objectSignal{p.navbar.fwdButton.Object, h})
+
 	// BUG: GTK does not set the correct actual GValue type for a GtkEntry
 	// when marshaling values for a GClosure connecting to the "activate"
 	// signal.  Attempting to use a *gtk.Entry as the first argument to this
@@ -290,7 +300,7 @@ func (p *HTMLPage) connectNavbarSignals() (signals []objectSignal) {
 	//
 	// See https://bugzilla.gnome.org/show_bug.cgi?id=727678 for more
 	// details.
-	h, _ := p.navbar.uriEntry.Connect("activate", func() {
+	h, _ = p.navbar.uriEntry.Connect("activate", func() {
 		uri, _ := p.navbar.uriEntry.GetText()
 		p.LoadURI(uri)
 		p.wv.GrabFocus()
@@ -329,8 +339,15 @@ func (p *HTMLPage) connectNavbarSignals() (signals []objectSignal) {
 	return append(signals, objectSignal{p.navbar.uriEntry.Object, h})
 }
 
-func (p *HTMLPage) connectWebViewSignals() (signals []objectSignal) {
-	h, _ := p.wv.Connect("load-changed", func(wv *wk2.WebView, e wk2.LoadEvent) {
+func (p *HTMLPage) connectWebKitSignals() (signals []objectSignal) {
+	bfl := p.wv.BackForwardList()
+	h, _ := bfl.Connect("changed", func() {
+		p.navbar.backButton.SetSensitive(p.wv.CanGoBack())
+		p.navbar.fwdButton.SetSensitive(p.wv.CanGoForward())
+	})
+	signals = append(signals, objectSignal{bfl.Object, h})
+
+	h, _ = p.wv.Connect("load-changed", func(wv *wk2.WebView, e wk2.LoadEvent) {
 		switch e {
 		case wk2.LoadStarted:
 		case wk2.LoadRedirected:
